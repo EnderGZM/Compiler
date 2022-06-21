@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <AST.h>
@@ -36,31 +37,32 @@ void StmtAST::Dump()const{
     cout<<"type:"<<type<<",number:"<<number<<"}";
 }
 
-void CompUnitAST::PrintIR()const{
-    func_def->PrintIR();
+void CompUnitAST::PrintIR(ofstream &fout)const{
+    func_def->PrintIR(fout);
 }
 
-void FuncDefAST::PrintIR()const{
-    cout<<"fun @"<<ident<<"(): ";
-    func_type->PrintIR();
-    cout<<"{"<<endl;
-    block->PrintIR();
-    cout<<"}"<<endl;
+void FuncDefAST::PrintIR(ofstream &fout)const{
+    fout<<"fun @"<<ident<<"(): ";
+    func_type->PrintIR(fout);
+    fout<<"{\n";
+    block->PrintIR(fout);
+    fout<<"}\n";
 }
 
-void FuncTypeAST::PrintIR()const{
+void FuncTypeAST::PrintIR(ofstream &fout)const{
     if(type=="int")
-        cout<<"i32 ";
+        fout<<"i32";
 }
 
-void BlockAST::PrintIR()const{
-    cout<<"\%entry: "<<endl;
-    stmt->PrintIR();
-    cout<<endl;
+void BlockAST::PrintIR(ofstream &fout)const{
+    fout<<"\%entry: \n";
+    stmt->PrintIR(fout);
+    fout<<"\n";
 }
 
-void StmtAST::PrintIR()const{
+void StmtAST::PrintIR(ofstream &fout)const{
     if(type=="return"){
-        cout<<"\tret "<<number;
+        fout<<"\tret ";
+        fout<<number;
     }
 }

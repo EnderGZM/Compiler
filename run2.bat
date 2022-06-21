@@ -1,0 +1,1 @@
+build/compiler -riscv hello.c -o hello
