@@ -4,19 +4,11 @@
 #include <memory>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include "riscv.h"
 #include "koopa.h"
 
 using namespace std;
-void Visit(const koopa_raw_return_t &ret,ofstream &fout) {
-    fout<<"  li a0, ";
-    Visit(ret.value,fout);
-    fout<<"\n  ret\n";
-}
-
-void Visit(const koopa_raw_integer_t &ret,ofstream &fout) {
-    fout<<ret.value;
-}
 
 void Visit(const koopa_raw_program_t &program,ofstream &fout){
     fout<<"  .text\n";
@@ -53,20 +45,67 @@ void Visit(const koopa_raw_basic_block_t &bb,ofstream &fout) {
   Visit(bb->insts,fout);
 }
 
-void Visit(const koopa_raw_value_t &value,ofstream &fout) {
-  const auto &kind = value->kind;
-  switch (kind.tag) {
-    case KOOPA_RVT_RETURN:
-      Visit(kind.data.ret,fout);
-      break;
-    case KOOPA_RVT_INTEGER:
-      Visit(kind.data.integer,fout);
-      break;
-    default:
-      assert(false);
-  }
+int register_cnt=0;
+map<koopa_raw_value_t,string> valuemap;
+string Visit(const koopa_raw_value_t &value,ofstream &fout) {
+    if(valuemap.find(value)!=valuemap.end())
+        return valuemap[value];
+    const auto &kind = value->kind;
+    string result;
+    switch (kind.tag) {
+        case KOOPA_RVT_RETURN:
+            result=Visit(kind.data.ret,fout);
+            break;
+        case KOOPA_RVT_INTEGER:
+            result=Visit(kind.data.integer,fout);
+            break;
+        case KOOPA_RVT_BINARY:
+            result=Visit(kind.data.binary,fout);
+            break;
+        default:
+            assert(false);
+    }
+    valuemap[value]=result;
+    return result;
 }
 
+string Visit(const koopa_raw_return_t &ret,ofstream &fout) {
+    koopa_raw_value_t ret_value=ret.value;
+    string result=Visit(ret_value,fout);
+    fout<<"\tmv a0, "<<result<<"\n";
+    fout<<"\tret\n";
+    return result;
+}
+
+string Visit(const koopa_raw_integer_t &raw_integer,ofstream &fout){
+    int val=raw_integer.value;
+    if(val==0)
+        return "x0";
+    string result=register_cnt<7?("t"+to_string(register_cnt)):("a"+to_string(register_cnt-7));
+    ++register_cnt;
+    fout<<"\tli "<<result<<", "<<val<<"\n";
+    return result;
+}
+
+string Visit(const koopa_raw_binary_t &binary,ofstream &fout){
+    koopa_raw_binary_op_t op=binary.op;
+    string Lval=Visit(binary.lhs,fout);
+    string Rval=Visit(binary.rhs,fout);
+    string result=register_cnt<7?("t"+to_string(register_cnt)):("a"+to_string(register_cnt-7));
+    ++register_cnt;
+    switch(op){
+        case KOOPA_RBO_EQ:
+            fout<<"\txor "<<result<<", "<<Lval<<", "<<Rval<<"\n";
+            fout<<"\tseqz "<<result<<", "<<result<<"\n";
+        break;
+        case KOOPA_RBO_SUB:
+            fout<<"\tsub "<<result<<", "<<Lval<<", "<<Rval<<"\n";
+        break;
+        default:
+            assert(false);
+    }
+    return result;
+}
 void generation(const char* buf,ofstream &fout){
     koopa_program_t program;
     koopa_error_code_t ret = koopa_parse_from_string(buf, &program);
