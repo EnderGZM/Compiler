@@ -11,7 +11,7 @@ class BaseAST {
   public:
     virtual ~BaseAST() = default;
     virtual void Dump() const = 0;
-    virtual void PrintIR(ofstream &fout);
+    virtual void PrintIR(ofstream &fout)=0;
 };
 
 class CompUnitAST : public BaseAST {
@@ -51,8 +51,6 @@ class BlockAST : public BaseAST{
 class BaseExpAST : public BaseAST{
   public:
     string result;
-    void Dump() const override{}
-    void PrintIR(ofstream &fout) override{}
 };
 
 enum Stmt_kind{
@@ -70,7 +68,6 @@ class StmtAST : public BaseAST{
 class ExpAST : public BaseExpAST {
   public:
     std::unique_ptr<BaseExpAST>unary_exp;
-    string result;
     void Dump() const override;
     void PrintIR(ofstream &fout)  override;
 };
@@ -83,7 +80,6 @@ class UnaryExpAST : public BaseExpAST {
 public:
     UnaryExp_kind type;
     std::unique_ptr<BaseExpAST> exp;
-    string result;
     char op;
     void Dump()const override;
     void PrintIR(ofstream &fout)  override;
@@ -97,7 +93,6 @@ class PrimaryExpAST : public BaseExpAST {
 public:
     PrimaryExp_kind type;
     std::unique_ptr<BaseExpAST> exp;
-    string result;
     int number;
     void Dump()const override;
     void PrintIR(ofstream &fout)  override;

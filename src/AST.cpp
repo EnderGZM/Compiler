@@ -92,7 +92,7 @@ int var_cnt=0;
 void StmtAST::PrintIR(ofstream &fout){
     if(type==Stmt_ret){
         exp->PrintIR(fout);
-        fout <<"\tret \%"<<exp->result<<"\n";
+        fout <<"\tret "<<exp->result<<"\n";
     }
 }
 
