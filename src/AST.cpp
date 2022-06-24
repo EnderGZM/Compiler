@@ -5,8 +5,23 @@
 #include <memory>
 #include <string>
 #include <sstream>
+#include <map>
 #include "AST.h"
 using namespace std;
+
+vector<map<string,string> > symbol_tables;
+
+int var_cnt=0;
+int table_cnt=0;
+
+string find_symbol(string name){
+    int sz=symbol_tables.size();
+    for(int i=sz-1;i>=0;--i)
+        if(symbol_tables[i].find(name)!=symbol_tables[i].end())
+            return symbol_tables[i][name];
+    assert(0);
+    return "";
+}
 
 void CompUnitAST::Dump()const{
     std::cout << "CompUnitAST { "<<endl;
@@ -16,29 +31,30 @@ void CompUnitAST::Dump()const{
 
 void FuncDefAST::Dump()const{
     std::cout << "FuncDefAST { "<<endl;
-    func_type->Dump();
+    type->Dump();
     std::cout << ", " << ident << ", "<<endl;
     block->Dump();
     std::cout << " }"<<endl;
 }
 
-void FuncTypeAST::Dump()const{
+void TypeAST::Dump()const{
     cout << "FuncTypeAST { "<<endl;
     cout<<type<<" }"<<endl;
 }
 
 void BlockAST::Dump()const{
     cout<< "BlockAST{ "<<endl;
-    stmt->Dump();
+    for(auto it=blockitem_list->begin();it!=blockitem_list->end();it++)
+        (*it)->Dump();
     cout<<" }"<<endl;
 }
 
-void StmtAST::Dump()const{
+/*void StmtAST::Dump()const{
     cout<<"StmtAST{"<<endl;
     cout<<"type:"<<type<<endl;
     exp->Dump();
     cout<<"}"<<endl;
-}
+}*/
 
 void ExpAST::Dump()const{
     cout<<"ExpAST{"<<endl;
@@ -157,29 +173,82 @@ void CompUnitAST::PrintIR(stringstream &fout){
 
 void FuncDefAST::PrintIR(stringstream &fout){
     fout<<"fun @"<<ident<<"(): ";
-    func_type->PrintIR(fout);
+    type->PrintIR(fout);
     fout<<"{\n";
+    fout<<"\%entry: \n";
     block->PrintIR(fout);
     fout<<"}\n";
 }
 
-void FuncTypeAST::PrintIR(stringstream &fout){
+void TypeAST::PrintIR(stringstream &fout){
     if(type==Type_int)
         fout<<"i32";
 }
 
 void BlockAST::PrintIR(stringstream &fout){
-    fout<<"\%entry: \n";
-    stmt->PrintIR(fout);
+    map<string,string>symbol_table;
+    ++table_cnt;
+    symbol_tables.push_back(symbol_table);
+    for(auto it=blockitem_list->begin();it!=blockitem_list->end();it++)
+        (*it)->PrintIR(fout);
+    symbol_tables.pop_back();
 }
 
-int var_cnt=0;
+void BlockItemAST::PrintIR(stringstream &fout){
+    val->PrintIR(fout);
+}
+
+void DeclAST::PrintIR(stringstream &fout){
+    for(auto it=def_list->begin();it!=def_list->end();it++)
+        (*it)->PrintIR(fout);
+}
+
+
+void DefAST::PrintIR(stringstream &fout){
+    string name="@"+ident+"_"+to_string(table_cnt);
+    symbol_tables[symbol_tables.size()-1][ident]=name;
+    fout<<"\t"<<name<<" = alloc i32\n";
+    if(val!=NULL){
+        val->PrintIR(fout);
+        fout<<"\tstore "<<val->result<<", "<<name<<"\n";
+    }
+}
+
+void InitValAST::PrintIR(stringstream &fout){
+    exp->PrintIR(fout);
+    result=exp->result;
+}
+
 
 void StmtAST::PrintIR(stringstream &fout){
-    if(type==Stmt_ret){
-        exp->PrintIR(fout);
-        fout <<"\tret "<<exp->result<<"\n";
+    switch(type){
+        case Stmt_ret:
+            exp->PrintIR(fout);
+            fout <<"\tret "<<exp->result<<"\n";
+        break;
+        case Stmt_ret_void:
+            fout <<"\tret \n";
+        break;
+        case Stmt_lval:
+            lval->PrintIR(fout);
+            exp->PrintIR(fout);
+            fout<<"\tstore "<<exp->result<<", "<<lval->result<<endl;
+        break;
+        case Stmt_exp:
+            exp->PrintIR(fout);
+        break;
+        case Stmt_block:
+            block->PrintIR(fout);
+        break;
+        case Stmt_void:
+        break;
+        default:
+            assert(0);
     }
+}
+
+void LvalAST::PrintIR(stringstream &fout){
+    result=find_symbol(ident);
 }
 
 void ExpAST::PrintIR(stringstream &fout){
@@ -335,5 +404,10 @@ void PrimaryExpAST::PrintIR(stringstream &fout){
     else if(type==PrimaryExp_exp){
         exp->PrintIR(fout);
         result=exp->result;
+    }
+    else{
+        lval->PrintIR(fout);
+        result="%"+to_string(var_cnt++);
+        fout<<"\t"<<result<<" = load "<<lval->result<<endl;
     }
 }

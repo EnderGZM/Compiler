@@ -32,7 +32,7 @@ int main(int argc, const char *argv[]) {
     stringstream buf2;
     if(strcmp(mode,"-koopa")==0){
         ast->PrintIR(buf); 
-        fout<<buf.str();
+        fout<<buf.str()<<endl;
     }
     if(strcmp(mode,"-riscv")==0){
         ast->PrintIR(buf);
@@ -40,5 +40,6 @@ int main(int argc, const char *argv[]) {
         fout<<buf2.str()<<endl;
     }
     fout.close();
+    cout<<"!";
     return 0;
 }

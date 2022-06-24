@@ -1,6 +1,19 @@
 fun @main(): i32{
 %entry: 
-	%0 = or 1, 2
-	%1 = ne %0, 0
-	ret %1
+	@a_1 = alloc i32
+	store 1, @a_1
+	%0 = load @a_1
+	%1 = add %0, 2
+	store %1, @a_1
+	@a_2 = alloc i32
+	store 3, @a_2
+	%2 = load @a_2
+	%3 = add %2, 4
+	store %3, @a_2
+	%4 = load @a_1
+	%5 = add %4, 5
+	store %5, @a_1
+	%6 = load @a_1
+	ret %6
 }
+

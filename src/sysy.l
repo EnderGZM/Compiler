@@ -40,6 +40,7 @@ EqOP          [=|!][=]
 
 "int"           { return INT; }
 "return"        { return RETURN; }
+"const"        { return CONST; }
 "||"            { return OrOP;}
 "&&"            { return AndOP;}
 
