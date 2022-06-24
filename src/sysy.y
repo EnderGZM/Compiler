@@ -29,14 +29,14 @@ using namespace std;
   char chr_val;
 }
 
-%token INT RETURN
-%token <str_val> IDENT
+%token INT RETURN OrOP AndOP
+%token <str_val> IDENT RelOP EqOP
 %token <int_val> INT_CONST
 
 %type <ast_val> FuncDef FuncType Block Stmt
-%type <ast_exp_val> Exp PrimaryExp UnaryExp
+%type <ast_exp_val> Exp PrimaryExp UnaryExp AddExp MulExp LorExp LandExp EqExp RelExp
 %type <int_val> Number
-%type <chr_val> UnaryOp
+%type <chr_val> UnaryOp AddOp MulOp
 
 %%
 
@@ -84,9 +84,105 @@ Stmt
   ;
 
 Exp
-  : UnaryExp {
+  : LorExp {
     auto ast=new ExpAST();
-    ast->unary_exp=unique_ptr<BaseExpAST>($1);
+    ast->exp=unique_ptr<BaseExpAST>($1);
+    $$=ast;
+  }
+  ;
+
+LorExp
+  : LandExp{
+    auto ast=new LorExpAST();
+    ast->op=0;
+    ast->land_exp=std::unique_ptr<BaseExpAST>($1);
+    $$=ast;
+  }
+  | LorExp OrOP LandExp{
+    auto ast=new LorExpAST();
+    ast->lor_exp=std::unique_ptr<BaseExpAST>($1);
+    ast->op='|';
+    ast->land_exp=std::unique_ptr<BaseExpAST>($3);
+    $$=ast;
+  }
+  ;
+
+LandExp
+  : EqExp{
+    auto ast=new LandExpAST();
+    ast->op=0;
+    ast->eq_exp=std::unique_ptr<BaseExpAST>($1);
+    $$=ast;
+  }
+  | LandExp AndOP EqExp{
+    auto ast=new LandExpAST();
+    ast->land_exp=std::unique_ptr<BaseExpAST>($1);
+    ast->op='&';
+    ast->eq_exp=std::unique_ptr<BaseExpAST>($3);
+    $$=ast;
+  }
+  ;
+
+EqExp
+  : RelExp{
+    auto ast=new EqExpAST();
+    ast->op="";
+    ast->rel_exp=std::unique_ptr<BaseExpAST>($1);
+    $$=ast;
+  }
+  | EqExp EqOP RelExp{
+    auto ast=new EqExpAST();
+    ast->eq_exp=std::unique_ptr<BaseExpAST>($1);
+    ast->op=*($2);
+    ast->rel_exp=std::unique_ptr<BaseExpAST>($3);
+    $$=ast;
+  }
+  ;
+
+RelExp
+  : AddExp{
+    auto ast=new RelExpAST();
+    ast->op="";
+    ast->add_exp=std::unique_ptr<BaseExpAST>($1);
+    $$=ast;
+  }
+  | RelExp RelOP AddExp{
+    auto ast=new RelExpAST();
+    ast->rel_exp=std::unique_ptr<BaseExpAST>($1);
+    ast->op=*($2);
+    ast->add_exp=std::unique_ptr<BaseExpAST>($3);
+    $$=ast;
+  }
+  ;
+
+AddExp
+  : MulExp{
+    auto ast=new AddExpAST();
+    ast->op=0;
+    ast->mul_exp=std::unique_ptr<BaseExpAST>($1);
+    $$=ast;
+  }
+  | AddExp AddOp MulExp{
+    auto ast=new AddExpAST();
+    ast->add_exp=std::unique_ptr<BaseExpAST>($1);
+    ast->op=$2;
+    ast->mul_exp=std::unique_ptr<BaseExpAST>($3);
+    $$=ast;
+  }
+  ;
+
+MulExp
+  : UnaryExp{
+    auto ast=new MulExpAST();
+    ast->op=0;
+    ast->unary_exp=std::unique_ptr<BaseExpAST>($1);
+    $$=ast;
+  }
+  | MulExp MulOp UnaryExp{
+    auto ast=new MulExpAST();
+    ast->mul_exp=std::unique_ptr<BaseExpAST>($1);
+    ast->op=$2;
+    ast->unary_exp=std::unique_ptr<BaseExpAST>($3);
     $$=ast;
   }
   ;
@@ -94,16 +190,36 @@ Exp
 UnaryExp
   : PrimaryExp {
     auto ast=new UnaryExpAST();
-    ast->type=UnaryExp_primary;
+    ast->op=0;
     ast->exp=unique_ptr<BaseExpAST>($1);
     $$=ast;
   }
   | UnaryOp UnaryExp {
     auto ast=new UnaryExpAST();
-    ast->type=UnaryExp_Unary;
     ast->op=$1;
     ast->exp=unique_ptr<BaseExpAST>($2);
     $$=ast;
+  }
+  ;
+
+AddOp
+  : '+' {
+    $$ = '+';
+  }
+  | '-' {
+    $$ = '-';
+  }
+  ;
+
+MulOp
+  : '*' {
+    $$ = '*';
+  }
+  | '/' {
+    $$ = '/';
+  }
+  |'%'{
+    $$='%';
   }
   ;
 

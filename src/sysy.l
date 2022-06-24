@@ -29,6 +29,8 @@ Octal         0[0-7]*
 Hexadecimal   0[xX][0-9a-fA-F]+
 
 /*运算符*/
+RelOP         [<|>][=]?
+EqOP          [=|!][=]
 
 %%
 
@@ -38,12 +40,16 @@ Hexadecimal   0[xX][0-9a-fA-F]+
 
 "int"           { return INT; }
 "return"        { return RETURN; }
+"||"            { return OrOP;}
+"&&"            { return AndOP;}
 
 {Identifier}    { yylval.str_val = new string(yytext); return IDENT; }
 
 {Decimal}       { yylval.int_val = strtol(yytext, nullptr, 0); return INT_CONST; }
 {Octal}         { yylval.int_val = strtol(yytext, nullptr, 0); return INT_CONST; }
 {Hexadecimal}   { yylval.int_val = strtol(yytext, nullptr, 0); return INT_CONST; }
+{RelOP}         { yylval.str_val = new string(yytext); return RelOP; }
+{EqOP}          { yylval.str_val = new string(yytext); return EqOP; }
 
 
 

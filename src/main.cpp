@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <memory>
+#include <sstream>
 #include "AST.h"
 #include "riscv.h"
 #include "koopa.h"
@@ -26,23 +27,17 @@ int main(int argc, const char *argv[]) {
     unique_ptr<BaseAST> ast;
     auto ret = yyparse(ast);
     assert(!ret);
-    /*
-    ast->Dump();
-    cout<<endl;
-    */
+    //ast->Dump();
+    stringstream buf;
+    stringstream buf2;
     if(strcmp(mode,"-koopa")==0){
-        ast->PrintIR(fout); 
+        ast->PrintIR(buf); 
+        fout<<buf.str();
     }
     if(strcmp(mode,"-riscv")==0){
-        string tmpFileName=output;
-        tmpFileName="_"+tmpFileName+"_tmp";
-        ofstream ftmpout(tmpFileName);
-        ast->PrintIR(ftmpout);
-        ftmpout.close();
-        FILE *ftmpin=fopen(tmpFileName.c_str(),"r");
-        char *buf=(char*)malloc(100000);
-        fread(buf,1,100000,ftmpin);
-        generation(buf,fout);
+        ast->PrintIR(buf);
+        generation(buf.str().c_str(),buf2);
+        fout<<buf2.str()<<endl;
     }
     fout.close();
     return 0;
