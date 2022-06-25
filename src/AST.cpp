@@ -14,7 +14,10 @@ vector<map<string,string> > symbol_tables;
 int var_cnt=0;
 int table_cnt=0;
 int if_cnt=0;
-int ret_cnt=0;
+int while_cnt=0;
+int cut_cnt=0;
+string cur_while_entry;
+string cur_while_end;
 
 string find_symbol(string name){
     int sz=symbol_tables.size();
@@ -230,6 +233,8 @@ void InitValAST::PrintIR(stringstream &fout){
 
 void StmtAST::PrintIR(stringstream &fout){
     string btrue,bfalse,end;
+    string lst_entry,lst_end;
+    string while_begin;
     switch(type){
         case Stmt_simple:
             stmt->PrintIR(fout);
@@ -262,6 +267,27 @@ void StmtAST::PrintIR(stringstream &fout){
             fout<<"\tjump "<<end<<"\n";
             fout<<"\n"<<end<<":\n";
         break;
+        case Stmt_while:
+            lst_entry=cur_while_entry;
+            lst_end=cur_while_end;
+
+            cur_while_entry="\%while_entry_"+to_string(while_cnt);
+            cur_while_end="\%while_end_"+to_string(while_cnt);
+            while_begin="\%while_begin_"+to_string(while_cnt);
+
+            ++while_cnt;
+            fout<<"\tjump "<<cur_while_entry<<"\n";
+            fout<<"\n"<<cur_while_entry<<":\n";
+            exp->PrintIR(fout);
+            fout<<"\tbr "<<exp->result<<", "<<while_begin<<", "<<cur_while_end<<"\n";
+            fout<<"\n"<<while_begin<<":\n";
+            stmt->PrintIR(fout);
+            fout<<"\tjump "<<cur_while_entry<<"\n";
+            fout<<"\n"<<cur_while_end<<":\n";
+
+            cur_while_entry=lst_entry;
+            cur_while_end=lst_end;
+        break;
         default:
             assert(0);
     }
@@ -272,8 +298,8 @@ void SimpleStmtAST::PrintIR(stringstream &fout){
         case Simple_ret:
             exp->PrintIR(fout);
             fout<<"\tret "<<exp->result<<"\n";
-            ++ret_cnt;
-            fout<<"\%after_ret_"<<ret_cnt<<":\n";
+            ++cut_cnt;
+            fout<<"\%cut_"<<cut_cnt<<":\n";
         break;
         case Simple_ret_void:
             fout <<"\tret \n";
@@ -288,6 +314,18 @@ void SimpleStmtAST::PrintIR(stringstream &fout){
         break;
         case Simple_block:
             block->PrintIR(fout);
+        break;
+        case Simple_break:
+            assert(cur_while_end!="");
+            fout<<"\tjump "<<cur_while_end<<"\n";
+            ++cut_cnt;
+            fout<<"\%cut_"<<cut_cnt<<":\n";
+        break;
+        case Simple_continue:
+            assert(cur_while_entry!="");
+            fout<<"\tjump "<<cur_while_entry<<"\n";
+            ++cut_cnt;
+            fout<<"\%cut_"<<cut_cnt<<":\n";
         break;
         case Simple_void:
         break;
