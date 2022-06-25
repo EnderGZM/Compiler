@@ -13,6 +13,8 @@ vector<map<string,string> > symbol_tables;
 
 int var_cnt=0;
 int table_cnt=0;
+int if_cnt=0;
+int ret_cnt=0;
 
 string find_symbol(string name){
     int sz=symbol_tables.size();
@@ -176,7 +178,14 @@ void FuncDefAST::PrintIR(stringstream &fout){
     type->PrintIR(fout);
     fout<<"{\n";
     fout<<"\%entry: \n";
-    block->PrintIR(fout);
+    stringstream _out;
+    block->PrintIR(_out);
+    int p;
+    for(p=_out.str().size()-2;p>=0&&_out.str()[p]!='\n';--p);
+    if(_out.str()[p+1]=='%')
+        fout<<_out.str().substr(0,p)<<"\n";
+    else
+        fout<<_out.str();
     fout<<"}\n";
 }
 
@@ -219,28 +228,68 @@ void InitValAST::PrintIR(stringstream &fout){
     result=exp->result;
 }
 
-
 void StmtAST::PrintIR(stringstream &fout){
+    string btrue,bfalse,end;
     switch(type){
-        case Stmt_ret:
-            exp->PrintIR(fout);
-            fout <<"\tret "<<exp->result<<"\n";
+        case Stmt_simple:
+            stmt->PrintIR(fout);
         break;
-        case Stmt_ret_void:
+        case Stmt_if:
+            exp->PrintIR(fout);
+            btrue="\%true_"+to_string(if_cnt);
+            end="\%end_"+to_string(if_cnt);
+            ++if_cnt;
+
+            fout<<"\tbr "<<exp->result<<", "<<btrue<<", "<<end<<"\n";
+            fout<<"\n"<<btrue<<":\n";
+            stmt->PrintIR(fout);
+            fout<<"\tjump "<<end<<"\n";
+            fout<<"\n"<<end<<":\n";
+        break;
+        case Stmt_ifelse:
+            exp->PrintIR(fout);
+            btrue="\%true_"+to_string(if_cnt);
+            bfalse="\%false_"+to_string(if_cnt);
+            end="\%end_"+to_string(if_cnt);
+            ++if_cnt;
+
+            fout<<"\tbr "<<exp->result<<", "<<btrue<<", "<<bfalse<<"\n";
+            fout<<"\n"<<btrue<<":\n";
+            stmt->PrintIR(fout);
+            fout<<"\tjump "<<end<<"\n";
+            fout<<"\n"<<bfalse<<":\n";
+            else_stmt->PrintIR(fout);
+            fout<<"\tjump "<<end<<"\n";
+            fout<<"\n"<<end<<":\n";
+        break;
+        default:
+            assert(0);
+    }
+}
+
+void SimpleStmtAST::PrintIR(stringstream &fout){
+    switch(type){
+        case Simple_ret:
+            exp->PrintIR(fout);
+            fout<<"\tret "<<exp->result<<"\n";
+            ++ret_cnt;
+            fout<<"\%after_ret_"<<ret_cnt<<":\n";
+        break;
+        case Simple_ret_void:
             fout <<"\tret \n";
         break;
-        case Stmt_lval:
+        case Simple_lval:
             lval->PrintIR(fout);
             exp->PrintIR(fout);
-            fout<<"\tstore "<<exp->result<<", "<<lval->result<<endl;
+            fout<<"\tstore "<<exp->result<<", "<<lval->result<<"\n";
         break;
-        case Stmt_exp:
+        case Simple_exp:
             exp->PrintIR(fout);
         break;
-        case Stmt_block:
+        case Simple_block:
             block->PrintIR(fout);
         break;
-        case Stmt_void:
+        case Simple_void:
         break;
         default:
             assert(0);
@@ -257,36 +306,78 @@ void ExpAST::PrintIR(stringstream &fout){
 }
 
 void LorExpAST::PrintIR(stringstream &fout){
+    string btrue,bfalse,end;
     if(op==0){
         land_exp->PrintIR(fout);
         result=land_exp->result;
     }
     else{
         lor_exp->PrintIR(fout);
-        land_exp->PrintIR(fout);
-        string tmp="%"+to_string(var_cnt++);
+        btrue="\%true_"+to_string(if_cnt);
+        bfalse="\%false_"+to_string(if_cnt);
+        end="\%end_"+to_string(if_cnt);
+        ++if_cnt;
         result="%"+to_string(var_cnt++);
         assert(op=='|');
-        fout<<"\t"<<tmp<<" = or "<<lor_exp->result<<", "<<land_exp->result<<"\n";
-        fout<<"\t"<<result<<" = ne "<<tmp<<", 0\n";
+        
+        string result_pos="%"+to_string(var_cnt++);
+        fout<<"\t"<<result_pos<<" = alloc i32\n";
+
+        fout<<"\tbr "<<lor_exp->result<<", "<<btrue<<", "<<bfalse<<"\n";
+
+        fout<<"\n"<<btrue<<":\n";
+        
+        fout<<"\tstore 1,"<<result_pos<<"\n";
+        fout<<"\tjump "<<end<<"\n";
+
+        fout<<"\n"<<bfalse<<":\n";
+
+        land_exp->PrintIR(fout);
+        string tmp="%"+to_string(var_cnt++);
+        fout<<"\t"<<tmp<<" = ne "<<land_exp->result<<", 0\n";
+        fout<<"\tstore "<<tmp<<", "<<result_pos<<"\n";
+        fout<<"\tjump "<<end<<"\n";
+
+        fout<<"\n"<<end<<":\n";
+        fout<<"\t"<<result<<" = load "<<result_pos<<"\n";
     }
 }
 
 void LandExpAST::PrintIR(stringstream &fout){
+    string btrue,bfalse,end;
     if(op==0){
         eq_exp->PrintIR(fout);
         result=eq_exp->result;
     }
     else{
         land_exp->PrintIR(fout);
-        eq_exp->PrintIR(fout);
-        string tmp1="%"+to_string(var_cnt++);
-        string tmp2="%"+to_string(var_cnt++);
+        btrue="\%true_"+to_string(if_cnt);
+        bfalse="\%false_"+to_string(if_cnt);
+        end="\%end_"+to_string(if_cnt);
+        ++if_cnt;
         result="%"+to_string(var_cnt++);
         assert(op=='&');
-        fout<<"\t"<<tmp1<<" = ne "<<land_exp->result<<", 0\n";
-        fout<<"\t"<<tmp2<<" = ne "<<eq_exp->result<<", 0\n";
-        fout<<"\t"<<result<<" = and "<<tmp1<<", "<<tmp2<<"\n";
+
+        string result_pos="%"+to_string(var_cnt++);
+        fout<<"\t"<<result_pos<<" = alloc i32\n";
+
+        fout<<"\tbr "<<land_exp->result<<", "<<btrue<<", "<<bfalse<<"\n";
+
+        fout<<"\n"<<btrue<<":\n";
+
+        eq_exp->PrintIR(fout);
+        string tmp="%"+to_string(var_cnt++);
+        fout<<"\t"<<tmp<<" = ne "<<eq_exp->result<<", 0\n";
+        fout<<"\tstore "<<tmp<<", "<<result_pos<<"\n";
+        fout<<"\tjump "<<end<<"\n";
+
+        fout<<"\n"<<bfalse<<":\n";
+
+        fout<<"\tstore 0,"<<result_pos<<"\n";
+        fout<<"\tjump "<<end<<"\n";
+
+        fout<<"\n"<<end<<":\n";
+        fout<<"\t"<<result<<" = load "<<result_pos<<"\n";
     }
 }
 
@@ -408,6 +499,6 @@ void PrimaryExpAST::PrintIR(stringstream &fout){
     else{
         lval->PrintIR(fout);
         result="%"+to_string(var_cnt++);
-        fout<<"\t"<<result<<" = load "<<lval->result<<endl;
+        fout<<"\t"<<result<<" = load "<<lval->result<<"\n";
     }
 }

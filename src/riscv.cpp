@@ -179,7 +179,7 @@ void Visit(const koopa_raw_function_t &func,stringstream &fout) {
 void Visit(const koopa_raw_basic_block_t &bb,stringstream &fout){
     string name(bb->name+1);
     if (name!="entry")
-        fout<<cur_func->name+1<<"_"<<name<<":\n";
+        fout<<"_"<<cur_func->name+1<<"_"<<name<<":\n";
     Visit(bb->insts,fout);
 }
 
@@ -410,7 +410,7 @@ void Visit(const koopa_raw_branch_t &branch,stringstream &fout){
 void Visit(const koopa_raw_jump_t &jump,stringstream &fout) {
   SaveAll(fout);
   string func_name(cur_func->name+1),target(jump.target->name+1);
-  target=func_name+"_"+target;
+  target="_"+func_name+"_"+target;
   fout<<"\tj "<<target<<"\n";
 }
 

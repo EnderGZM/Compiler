@@ -89,12 +89,25 @@ class InitValAST: public BaseExpAST{
 };
 
 enum Stmt_kind{
-  Stmt_ret,Stmt_ret_void,Stmt_lval,Stmt_exp,Stmt_void,Stmt_block
+  Stmt_simple,Stmt_if,Stmt_ifelse,Stmt_while
 };
 
 class StmtAST : public BaseAST{
   public:
     Stmt_kind type;
+    unique_ptr<BaseExpAST>exp;
+    unique_ptr<BaseAST>stmt;
+    unique_ptr<BaseAST>else_stmt;
+    void PrintIR(stringstream &fout);
+};
+
+enum SimpleStmt_kind{
+  Simple_ret,Simple_ret_void,Simple_lval,Simple_exp,Simple_void,Simple_block,Simple_break,Simple_continue
+};
+
+class SimpleStmtAST : public BaseAST{
+  public:
+    SimpleStmt_kind type;
     unique_ptr<BaseAST>block;
     unique_ptr<BaseExpAST>exp;
     unique_ptr<BaseExpAST>lval;

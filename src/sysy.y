@@ -32,11 +32,11 @@ using namespace std;
   vector<unique_ptr<BaseAST> > *vec_val;
 }
 
-%token INT RETURN OrOP AndOP CONST
+%token INT RETURN OrOP AndOP CONST IF ELSE WHILE BREAK CONTINUE
 %token <str_val> IDENT RelOP EqOP
 %token <int_val> INT_CONST
 
-%type <ast_val> FuncDef Type Block Stmt Decl BlockItem Def
+%type <ast_val> FuncDef Type Block Stmt CloseStmt OpenStmt Decl BlockItem Def SimpleStmt
 %type <ast_exp_val> Exp PrimaryExp UnaryExp AddExp MulExp LorExp InitVal LandExp EqExp RelExp Lval
 %type <int_val> Number
 %type <vec_val> BlockItemList DefList
@@ -157,41 +157,109 @@ InitVal
   ;
 
 Stmt
-  : RETURN Exp ';' {
+  : OpenStmt{
+    $$=$1;
+  }
+  | CloseStmt{
+    $$=$1;
+  }
+  ;
+
+OpenStmt
+  : IF '(' Exp ')' Stmt{
+    auto ast=new StmtAST();
+    ast->type=Stmt_if;
+    ast->exp=unique_ptr<BaseExpAST>($3);
+    ast->stmt=unique_ptr<BaseAST>($5);
+    $$=ast;
+  }
+  | IF '(' Exp ')' CloseStmt ELSE OpenStmt {
+    auto ast=new StmtAST();
+    ast->type=Stmt_ifelse;
+    ast->exp=unique_ptr<BaseExpAST>($3);
+    ast->stmt=unique_ptr<BaseAST>($5);
+    ast->else_stmt=unique_ptr<BaseAST>($7);
+    $$=ast;
+  }
+  | WHILE '(' Exp ')' OpenStmt {
+    auto ast=new StmtAST();
+    ast->type=Stmt_while;
+    ast->exp=unique_ptr<BaseExpAST>($3);
+    ast->stmt=unique_ptr<BaseAST>($5);
+    $$=ast;
+  }
+  ;
+
+CloseStmt
+  : SimpleStmt {
+    auto ast=new StmtAST();
+    ast->type=Stmt_simple;
+    ast->stmt=unique_ptr<BaseAST>($1);
+    $$=ast;
+  }
+  | IF '(' Exp ')' CloseStmt ELSE CloseStmt {
     auto ast = new StmtAST();
-    ast->type=Stmt_ret;
+    ast->type=Stmt_ifelse;
+    ast->exp=unique_ptr<BaseExpAST>($3);
+    ast->stmt=unique_ptr<BaseAST>($5);
+    ast->else_stmt=unique_ptr<BaseAST>($7);
+    $$=ast;
+  }
+  | WHILE '(' Exp ')' CloseStmt {
+    auto ast=new StmtAST();
+    ast->type=Stmt_while;
+    ast->exp=unique_ptr<BaseExpAST>($3);
+    ast->stmt=unique_ptr<BaseAST>($5);
+    $$=ast;
+  }
+  ;
+
+SimpleStmt
+  : RETURN Exp ';' {
+    auto ast = new SimpleStmtAST();
+    ast->type=Simple_ret;
     ast->exp = unique_ptr<BaseExpAST>($2);
     $$ = ast;
   }
   | RETURN ';'{
-    auto ast= new StmtAST();
-    ast->type=Stmt_ret_void;
+    auto ast= new SimpleStmtAST();
+    ast->type=Simple_ret_void;
     ast->exp=NULL;
     $$=ast;
   }
   | Lval '=' Exp ';'{
-    auto ast=new StmtAST();
-    ast->type=Stmt_lval;
+    auto ast=new SimpleStmtAST();
+    ast->type=Simple_lval;
     ast->lval=unique_ptr<BaseExpAST>($1);
     ast->exp=unique_ptr<BaseExpAST>($3);
     $$=ast;
   }
   | Exp ';' {
-    auto ast=new StmtAST();
-    ast->type=Stmt_exp;
+    auto ast=new SimpleStmtAST();
+    ast->type=Simple_exp;
     ast->exp=unique_ptr<BaseExpAST>($1);
     $$=ast;
   }
   | ';' {
-    auto ast=new StmtAST();
-    ast->type=Stmt_void;
+    auto ast=new SimpleStmtAST();
+    ast->type=Simple_void;
     ast->exp=NULL;
     $$=ast;
   }
   | Block {
-    auto ast=new StmtAST();
-    ast->type=Stmt_block;
+    auto ast=new SimpleStmtAST();
+    ast->type=Simple_block;
     ast->block=unique_ptr<BaseAST>($1);
+    $$=ast;
+  }
+  | BREAK ';' {
+    auto ast=new SimpleStmtAST();
+    ast->type=Simple_break;
+    $$=ast;
+  }
+  | CONTINUE ';' {
+    auto ast=new SimpleStmtAST();
+    ast->type=Simple_continue;
     $$=ast;
   }
   ;

@@ -40,6 +40,5 @@ int main(int argc, const char *argv[]) {
         fout<<buf2.str()<<endl;
     }
     fout.close();
-    cout<<"!";
     return 0;
 }

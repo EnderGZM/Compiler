@@ -40,9 +40,14 @@ EqOP          [=|!][=]
 
 "int"           { return INT; }
 "return"        { return RETURN; }
-"const"        { return CONST; }
+"const"         { return CONST; }
 "||"            { return OrOP;}
 "&&"            { return AndOP;}
+"if"            { return IF; }
+"else"          { return ELSE; }
+"while"         { return WHILE; }
+"break"          { return BREAK; }
+"continue"         { return CONTINUE; }
 
 {Identifier}    { yylval.str_val = new string(yytext); return IDENT; }
 

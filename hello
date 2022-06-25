@@ -2,17 +2,88 @@
 	.text
 	.globl main
 main:
-	addi sp, sp, -80
-	sw ra, 76(sp)
+	addi sp, sp, -880
+	sw ra, 876(sp)
 	li t0, 10
 	sw t0, 0(sp)
 	lw t0, 0(sp)
 	li t1, 1
-	add t1, t0, t1
-	sw t1, 0(sp)
-	lw t2, 0(sp)
-	mv a0, t2
-	lw ra, 76(sp)
-	addi sp, sp, 80
+	sgt t1, t0, t1
+	sw t0, 4(sp)
+	sw t1, 8(sp)
+	bnez t1, _main_true_1
+	j _main_end_1
+_main_true_1:
+	lw t0, 0(sp)
+	li t1, 2
+	sgt t1, t0, t1
+	sw t0, 12(sp)
+	sw t1, 16(sp)
+	bnez t1, _main_true_2
+	j _main_end_2
+_main_end_1:
+	li t0, 1
+	sub t0, x0, t0
+	mv a0, t0
+	lw ra, 876(sp)
+	addi sp, sp, 880
 	ret
+_main_true_2:
+	lw t1, 0(sp)
+	li t2, 3
+	slt t2, t1, t2
+	sw t0, 20(sp)
+	sw t1, 24(sp)
+	sw t2, 28(sp)
+	bnez t2, _main_true_3
+	j _main_false_3
+_main_end_2:
+	j _main_end_1
+_main_true_3:
+	lw t0, 0(sp)
+	mv a0, t0
+	lw ra, 876(sp)
+	addi sp, sp, 880
+	ret
+_main_false_3:
+	lw t1, 0(sp)
+	li t2, 4
+	sgt t2, t1, t2
+	sw t0, 32(sp)
+	sw t1, 36(sp)
+	sw t2, 40(sp)
+	bnez t2, _main_true_4
+	j _main_end_4
+_main_true_4:
+	lw t0, 0(sp)
+	li t1, 5
+	slt t1, t0, t1
+	sw t0, 44(sp)
+	sw t1, 48(sp)
+	bnez t1, _main_true_5
+	j _main_false_5
+_main_end_4:
+	j _main_end_3
+_main_true_5:
+	lw t0, 0(sp)
+	li t1, 1
+	add t1, t0, t1
+	mv a0, t1
+	lw ra, 876(sp)
+	addi sp, sp, 880
+	ret
+_main_false_5:
+	lw t2, 0(sp)
+	li t3, 2
+	add t3, t2, t3
+	mv a0, t3
+	lw ra, 876(sp)
+	addi sp, sp, 880
+	ret
+_main_end_3:
+	sw t0, 52(sp)
+	sw t1, 56(sp)
+	sw t2, 60(sp)
+	sw t3, 64(sp)
+	j _main_end_2
 
