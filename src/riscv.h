@@ -14,9 +14,10 @@ class RegInfo{
   public:
     int addr;
     int reg;
+    int local_addr;
     string glob_addr;
-    RegInfo(){reg=-1;addr=-1;glob_addr="";}
-    RegInfo(int _reg,int _addr,string _glob_addr){reg=_reg;addr=_addr;glob_addr=_glob_addr;}
+    RegInfo(){reg=-1;addr=-1;local_addr=-1;glob_addr="";}
+    RegInfo(int _reg,int _addr,string _glob_addr){reg=_reg;addr=_addr;local_addr=-1;glob_addr=_glob_addr;}
 };
 
 

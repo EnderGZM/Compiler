@@ -27,11 +27,12 @@ int main(int argc, const char *argv[]) {
     unique_ptr<BaseAST> ast;
     auto ret = yyparse(ast);
     assert(!ret);
+    cout<<"parse ok!"<<endl;
     //ast->Dump();
     stringstream buf;
     stringstream buf2;
     if(strcmp(mode,"-koopa")==0){
-        ast->PrintIR(buf); 
+        ast->PrintIR(buf);
         fout<<buf.str()<<endl;
     }
     if(strcmp(mode,"-riscv")==0){

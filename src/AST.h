@@ -13,28 +13,25 @@ class BaseAST {
   public:
     virtual ~BaseAST() = default;
     virtual void Dump()const{}
-    virtual void PrintIR(stringstream &fout)=0;
+    virtual void PrintIR(stringstream &fout){}
+    virtual void Global_Alloc(stringstream &fout){}
 };
 
 class BaseExpAST : public BaseAST{
   public:
     string result;
+    virtual int Calc(){return 0;}
 };
 
 
 class CompUnitAST : public BaseAST {
   public:
-    unique_ptr<BaseAST> func_def;
-    void Dump()const;
-    void PrintIR(stringstream &fout);
-};
-
-class FuncDefAST : public BaseAST {
-  public:
-    unique_ptr<BaseAST> type;
-    string ident;
-    unique_ptr<BaseAST> block;
-    void Dump() const;
+    unique_ptr<vector<unique_ptr<BaseAST> > >func_def_list;
+    unique_ptr<vector<unique_ptr<BaseAST> > >global_decl_list;
+    CompUnitAST(){
+      func_def_list=unique_ptr<vector<unique_ptr<BaseAST> > >(new vector<unique_ptr<BaseAST> >);
+      global_decl_list=unique_ptr<vector<unique_ptr<BaseAST> > >(new vector<unique_ptr<BaseAST> >);
+    }
     void PrintIR(stringstream &fout);
 };
 
@@ -42,50 +39,86 @@ enum Type_kind{
   Type_int,Type_void
 };
 
-class TypeAST : public BaseAST{
+class FuncDefAST : public BaseAST {
   public:
     Type_kind type;
-    void Dump() const;
+    string ident;
+    unique_ptr<BaseAST> block;
+    unique_ptr<vector<unique_ptr<BaseAST> > >params;
+    void PrintIR(stringstream &fout);
+};
+
+class FuncFParamAST : public BaseAST {
+  public:
+    string ident;
+    Type_kind type;
+    bool is_array;
+    unique_ptr<vector<unique_ptr<BaseExpAST> > >len;
     void PrintIR(stringstream &fout);
 };
 
 class BlockAST : public BaseAST{
   public:
     unique_ptr<vector<unique_ptr<BaseAST> > >blockitem_list;
-    void Dump() const;
     void PrintIR(stringstream &fout);
 };
 
-enum blockitem_kind{
-  Blockitem_decl,Blockitem_stmt
-};
-
-class BlockItemAST : public BaseAST{
+class VarDeclAST : public BaseAST{
   public:
-    blockitem_kind type;
-    unique_ptr<BaseAST>val;
-    void PrintIR(stringstream &fout);
-};
-
-class DeclAST : public BaseAST{
-  public:
-    unique_ptr<BaseAST>type;
+    Type_kind type;
     unique_ptr<vector<unique_ptr<BaseAST> > > def_list;
     void PrintIR(stringstream &fout);
+    void Global_Alloc(stringstream &fout);
 };
 
-
-class DefAST: public BaseAST{
+class VarDefAST: public BaseAST{
   public:
     string ident;
-    unique_ptr<BaseExpAST> val;
+    unique_ptr<BaseExpAST>init;
+    unique_ptr<vector<unique_ptr<BaseExpAST> > >len;
     void PrintIR(stringstream &fout);
+    void Global_Alloc(stringstream &fout);
 };
 
-class InitValAST: public BaseExpAST{
+class VarInitAST: public BaseExpAST{
   public:
     unique_ptr<BaseExpAST>exp;
+    unique_ptr<vector<unique_ptr<BaseExpAST> > >init;
     void PrintIR(stringstream &fout);
+    int Calc();
+};
+
+class ConstDeclAST : public BaseAST{
+  public:
+    Type_kind type;
+    unique_ptr<vector<unique_ptr<BaseAST> > > def_list;
+    void PrintIR(stringstream &fout);
+    void Global_Alloc(stringstream &fout);
+};
+
+
+class ConstDefAST: public BaseAST{
+  public:
+    string ident;
+    unique_ptr<BaseExpAST>init;
+    unique_ptr<vector<unique_ptr<BaseExpAST> > >len;
+    void PrintIR(stringstream &fout);
+    void Global_Alloc(stringstream &fout);
+};
+
+class ConstInitAST: public BaseExpAST{
+  public:
+    unique_ptr<BaseExpAST>exp;
+    unique_ptr<vector<unique_ptr<BaseExpAST> > >init;
+    void PrintIR(stringstream &fout);
+    int Calc();
+};
+
+class ConstExpAST:public BaseExpAST {
+  public:
+    std::unique_ptr<BaseExpAST> exp;
+    void PrintIR(stringstream &fout);
+    int Calc();
 };
 
 enum Stmt_kind{
@@ -101,6 +134,13 @@ class StmtAST : public BaseAST{
     void PrintIR(stringstream &fout);
 };
 
+class LvalAST :public BaseExpAST{
+  public:
+    string ident;
+    unique_ptr<vector<unique_ptr<BaseExpAST> > >idx;
+    void PrintIR(stringstream &fout);
+};
+
 enum SimpleStmt_kind{
   Simple_ret,Simple_ret_void,Simple_lval,Simple_exp,Simple_void,Simple_block,Simple_break,Simple_continue
 };
@@ -110,78 +150,80 @@ class SimpleStmtAST : public BaseAST{
     SimpleStmt_kind type;
     unique_ptr<BaseAST>block;
     unique_ptr<BaseExpAST>exp;
-    unique_ptr<BaseExpAST>lval;
-    //void Dump() const;
+    unique_ptr<LvalAST>lval;
     void PrintIR(stringstream &fout);
 };
 
-class LvalAST :public BaseExpAST{
-  public:
-    string ident;
-    void PrintIR(stringstream &fout);
-};
+
 
 class ExpAST : public BaseExpAST {
   public:
     unique_ptr<BaseExpAST>exp;
-    void Dump() const;
     void PrintIR(stringstream &fout);
+    int Calc();
 };
 
 class LorExpAST : public BaseExpAST{
   public:
     unique_ptr<BaseExpAST>lor_exp,land_exp;
     char op;
-    void Dump()const;
     void PrintIR(stringstream &fout);
+    int Calc();
 };
 
 class LandExpAST : public BaseExpAST{
   public:
     unique_ptr<BaseExpAST>land_exp,eq_exp;
     char op;
-    void Dump()const;
     void PrintIR(stringstream &fout);
+    int Calc();
 };
 
 class EqExpAST : public BaseExpAST{
   public:
     unique_ptr<BaseExpAST>eq_exp,rel_exp;
     string op;
-    void Dump()const;
     void PrintIR(stringstream &fout);
+    int Calc();
 };
 
 class RelExpAST : public BaseExpAST{
   public:
     unique_ptr<BaseExpAST>rel_exp,add_exp;
     string op;
-    void Dump()const;
     void PrintIR(stringstream &fout);
+    int Calc();
 };
 
 class AddExpAST : public BaseExpAST{
   public:
     unique_ptr<BaseExpAST>add_exp,mul_exp;
     char op;
-    void Dump()const;
     void PrintIR(stringstream &fout);
+    int Calc();
 };
 
 class MulExpAST : public BaseExpAST{
   public:
     unique_ptr<BaseExpAST>mul_exp,unary_exp;
     char op;
-    void Dump()const;
     void PrintIR(stringstream &fout);
+    int Calc();
+};
+
+enum Unary_kind{
+  Unary_primary,Unary_call,Unary_op
 };
 
 class UnaryExpAST : public BaseExpAST {
 public:
+    Unary_kind type;
     unique_ptr<BaseExpAST> exp;
     char op;
-    void Dump()const;
+    string ident;
+    unique_ptr<vector<unique_ptr<BaseExpAST> > >params;
     void PrintIR(stringstream &fout);
+    int Calc();
 };
 
 enum PrimaryExp_kind{
@@ -192,9 +234,9 @@ class PrimaryExpAST : public BaseExpAST {
 public:
     PrimaryExp_kind type;
     unique_ptr<BaseExpAST> exp;
-    unique_ptr<BaseExpAST> lval;
+    unique_ptr<LvalAST> lval;
     int number;
-    void Dump()const;
     void PrintIR(stringstream &fout);
+    int Calc();
 };
 

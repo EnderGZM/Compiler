@@ -5,21 +5,30 @@
 #include <memory>
 #include <string>
 #include <sstream>
+#include <variant>
 #include <map>
 #include "AST.h"
 using namespace std;
 
-vector<map<string,string> > symbol_tables;
+vector<map<string,variant<int,string> > > symbol_tables;
+vector<string>cur_args;
+map<string, int>func_type;
+map<string, int>is_ptr;
+map<string, int>arr_dim;
 
 int var_cnt=0;
-int table_cnt=0;
 int if_cnt=0;
 int while_cnt=0;
 int cut_cnt=0;
+int in_call_func=0;
+bool is_global=0;
+vector<int>cur_array_int;
+vector<int>cur_len;
+vector<string>cur_array_string;
 string cur_while_entry;
 string cur_while_end;
 
-string find_symbol(string name){
+variant<int,string> find_symbol(string name){
     int sz=symbol_tables.size();
     for(int i=sz-1;i>=0;--i)
         if(symbol_tables[i].find(name)!=symbol_tables[i].end())
@@ -28,207 +37,364 @@ string find_symbol(string name){
     return "";
 }
 
-void CompUnitAST::Dump()const{
-    std::cout << "CompUnitAST { "<<endl;
-    func_def->Dump();
-    std::cout << " }"<<endl;
-}
-
-void FuncDefAST::Dump()const{
-    std::cout << "FuncDefAST { "<<endl;
-    type->Dump();
-    std::cout << ", " << ident << ", "<<endl;
-    block->Dump();
-    std::cout << " }"<<endl;
-}
-
-void TypeAST::Dump()const{
-    cout << "FuncTypeAST { "<<endl;
-    cout<<type<<" }"<<endl;
-}
-
-void BlockAST::Dump()const{
-    cout<< "BlockAST{ "<<endl;
-    for(auto it=blockitem_list->begin();it!=blockitem_list->end();it++)
-        (*it)->Dump();
-    cout<<" }"<<endl;
-}
-
-/*void StmtAST::Dump()const{
-    cout<<"StmtAST{"<<endl;
-    cout<<"type:"<<type<<endl;
-    exp->Dump();
-    cout<<"}"<<endl;
-}*/
-
-void ExpAST::Dump()const{
-    cout<<"ExpAST{"<<endl;
-    exp->Dump();
-}
-
-void LorExpAST::Dump()const{
-    cout<<"LorExp:"<<endl;
-    if(op==0)
-        land_exp->Dump();
-    else{
-        cout<<"{"<<endl;
-        lor_exp->Dump();
-        cout<<"}||"<<endl;
-        cout<<"{"<<endl;
-        land_exp->Dump();
-        cout<<"}"<<endl;
+void Print_Array_Int(stringstream &fout,int pos=0){
+    int sz=cur_len.size();
+    if(sz==0){
+        fout<<to_string(cur_array_int[pos]);
+        ++pos;
+        return;
     }
+    int num=cur_len[sz-1];
+    cur_len.pop_back();
+    fout<<"{";
+    int step=1;
+    for(int i=0;i<sz-1;++i)
+        step*=cur_len[i];
+    for(int i=0;i<num;++i){
+        Print_Array_Int(fout,pos);
+        pos+=step;
+        if(i!=num-1)
+            fout<<", ";
+    }
+    fout<<"}";
+    cur_len.push_back(num);
 }
-
-void LandExpAST::Dump()const{
-    cout<<"LandExp:"<<endl;
-    if(op==0)
-        eq_exp->Dump();
-    else{
-        cout<<"{"<<endl;
-        land_exp->Dump();
-        cout<<"}&&"<<endl;
-        cout<<"{"<<endl;
-        eq_exp->Dump();
-        cout<<"}"<<endl;
-    }
-}
-
-void EqExpAST::Dump()const{
-    cout<<"EqExp:"<<endl;
-    if(op=="")
-        rel_exp->Dump();
-    else{
-        cout<<"{"<<endl;
-        eq_exp->Dump();
-        cout<<"}"<<op<<endl;
-        cout<<"{"<<endl;
-        rel_exp->Dump();
-        cout<<"}"<<endl;
-    }
-}
-
-void RelExpAST::Dump()const{
-    cout<<"RelExp:";
-    if(op=="")
-        add_exp->Dump();
-    else{
-        cout<<"{";
-        rel_exp->Dump();
-        cout<<"}"<<op;
-        cout<<"{";
-        add_exp->Dump();
-        cout<<"}";
-    }
-}
-
-void AddExpAST::Dump()const{
-    cout<<"AddExp:";
-    if(op==0)
-        mul_exp->Dump();
-    else{
-        cout<<"{";
-        add_exp->Dump();
-        cout<<"}"<<op;
-        cout<<"{";
-        mul_exp->Dump();
-        cout<<"}";
-    }
-}
-
-void MulExpAST::Dump()const{
-    cout<<"MulExp:";
-    if(op==0)
-        unary_exp->Dump();
-    else{
-        cout<<"{";
-        mul_exp->Dump();
-        cout<<"}"<<op;
-        cout<<"{";
-        unary_exp->Dump();
-        cout<<"}";
-    }
-}
-
-void UnaryExpAST::Dump()const{
-    if(op==0){
-        exp->Dump();
-    }
-    else{
-        cout<<op;
-        exp->Dump();
-    }
-}
-
-void PrimaryExpAST::Dump()const{
-    if(type==PrimaryExp_exp){
-        cout<<'(';
-        exp->Dump();
-        cout<<')';
-    }
-    else if(type==PrimaryExp_number){
-        cout<<"Number:{"<<number<<"}";
-    }
-}
-
 
 void CompUnitAST::PrintIR(stringstream &fout){
-    func_def->PrintIR(fout);
+    fout<<"decl @getint(): i32\n";
+    fout<<"decl @getch(): i32\n";
+    fout<<"decl @getarray(*i32): i32\n";
+    fout<<"decl @putint(i32)\n";
+    fout<<"decl @putch(i32)\n";
+    fout<<"decl @putarray(i32, *i32)\n";
+    fout<<"decl @starttime()\n";
+    fout<<"decl @stoptime()\n";
+    fout<<"\n";
+
+    func_type["getint"] = Type_int;
+    func_type["getch"] = Type_int;
+    func_type["getarray"] = Type_int;
+    func_type["putint"] = Type_void;
+    func_type["putch"] =Type_void;;
+    func_type["putarray"] =Type_void;;
+    func_type["starttime"] =Type_void;
+    func_type["stoptime"] =Type_void;
+
+    map<string,variant<int,string> >global_map;
+    symbol_tables.push_back(global_map);
+    is_global=1;
+    for(auto it=global_decl_list->begin();it!=global_decl_list->end();++it)
+        (*it)->Global_Alloc(fout);
+    is_global=0;
+    for(auto it=func_def_list->begin();it!=func_def_list->end();++it)
+        (*it)->PrintIR(fout);
+    symbol_tables.pop_back();
+}
+
+void ConstDeclAST::Global_Alloc(stringstream &fout){
+    for(auto it=def_list->begin();it!=def_list->end();++it)
+        (*it)->Global_Alloc(fout);
+}
+
+void VarDeclAST::Global_Alloc(stringstream &fout){
+    for(auto it=def_list->begin();it!=def_list->end();++it)
+        (*it)->Global_Alloc(fout);
+}
+
+void ConstDefAST::Global_Alloc(stringstream &fout){
+    int cur_id=symbol_tables.size()-1;
+    string name="@"+ident+"_"+to_string(var_cnt++);
+    symbol_tables[cur_id][ident]=name;
+    if(len->size()==0){
+        PrintIR(fout);
+        return;
+    }
+    int sz=len->size();
+    arr_dim[name]=sz;
+    cur_len.clear();
+    string alloc_str;
+    for (int i=sz-1;i>=0;--i) {
+        int val=(*len)[i]->Calc();
+        cur_len.push_back(val);
+        if (i==sz-1)
+            alloc_str="[i32, "+to_string(val)+"]";
+        else
+            alloc_str="["+alloc_str+", "+to_string(val)+"]";
+    }
+    fout<<"global "<<name<<" = alloc "<<alloc_str<<", ";
+    cur_array_int.clear();
+    init->PrintIR(fout);
+    Print_Array_Int(fout);
+    fout<<"\n";
+}
+
+void VarDefAST::Global_Alloc(stringstream &fout){
+    int cur_id=symbol_tables.size()-1;
+    string name="@"+ident+"_"+to_string(var_cnt++);
+    symbol_tables[cur_id][ident]=name;
+    if(len->size()==0){
+        fout<<"global "<<name<<" = alloc i32, ";
+        if(init!=NULL){
+            int val=((VarInitAST*)(init.get()))->Calc();
+            if(val==0)
+                fout<<"zeroinit\n";
+            else
+                fout<<val<<"\n";
+        }
+        else
+            fout<<"zeroinit\n";
+    }
+    else{
+        int sz=len->size();
+        arr_dim[name]=sz;
+        cur_len.clear();
+        string alloc_str;
+        for (int i=sz-1;i>=0;--i) {
+            int val=(*len)[i]->Calc();
+            cur_len.push_back(val);
+            if (i==sz-1)
+                alloc_str="[i32, "+to_string(val)+"]";
+            else
+                alloc_str="["+alloc_str+", "+to_string(val)+"]";
+        }
+        fout<<"global "<<name<<" = alloc "<<alloc_str<<", ";
+        if(init!=NULL){
+            cur_array_int.clear();
+            init->PrintIR(fout);
+            Print_Array_Int(fout);
+            fout<<"\n";
+        }
+        else
+            fout<<"zeroinit\n";
+    }
 }
 
 void FuncDefAST::PrintIR(stringstream &fout){
-    fout<<"fun @"<<ident<<"(): ";
-    type->PrintIR(fout);
-    fout<<"{\n";
-    fout<<"\%entry: \n";
-    stringstream _out;
-    block->PrintIR(_out);
-    int p;
-    for(p=_out.str().size()-2;p>=0&&_out.str()[p]!='\n';--p);
-    if(_out.str()[p+1]=='%')
-        fout<<_out.str().substr(0,p)<<"\n";
+    fout<<"fun @"<<ident<<"(";
+    map<string,variant<int,string> >args_map;
+    symbol_tables.push_back(args_map);
+
+    int sz=params->size();
+    cur_args.clear();
+    for(int i=0;i<sz;++i){
+        (*params)[i]->PrintIR(fout);
+        if(i!=sz-1)
+            fout<<", ";
+    }
+    if(type==Type_int)
+        fout<<") : i32 {\n";
     else
-        fout<<_out.str();
+        fout<<") {\n";
+    func_type[ident]=type;
+
+    fout<<"\%entry:\n";
+    for(auto it=cur_args.begin();it!=cur_args.end();++it)
+        fout<<*it;
+    
+    block->PrintIR(fout);
+    if(type==Type_int)
+        fout<<"\tret 0\n";
+    else
+        fout<<"\tret\n";
     fout<<"}\n";
+    symbol_tables.pop_back();
 }
 
-void TypeAST::PrintIR(stringstream &fout){
-    if(type==Type_int)
-        fout<<"i32";
+void FuncFParamAST::PrintIR(stringstream &fout){
+    int cur_id=symbol_tables.size()-1;
+    string name="@param_"+ident,result="%param_"+ident;
+    symbol_tables[cur_id][ident]=result;
+    if (is_array) {
+        int sz=len->size();
+
+        string alloc_str = "i32";
+        for (int i=sz-1;i>=0;--i){
+            int val=((ConstExpAST*)((*len)[i].get()))->Calc();
+            alloc_str="["+alloc_str+","+to_string(val)+"]";
+        }
+        fout<<name<<": *"<<alloc_str;
+        is_ptr[result]=1;
+        arr_dim[result]=sz+1;
+        cur_args.push_back("\t"+result+" = alloc *"+alloc_str+"\n\tstore "+name+", "+result+"\n");
+    }
+    else {
+        fout<<name<<": i32";
+        symbol_tables[cur_id][ident]=result;
+        cur_args.push_back("\t"+result+" = alloc i32\n\tstore "+name+", "+result+"\n");
+    }
 }
 
 void BlockAST::PrintIR(stringstream &fout){
-    map<string,string>symbol_table;
-    ++table_cnt;
+    map<string,variant<int,string> >symbol_table;
     symbol_tables.push_back(symbol_table);
     for(auto it=blockitem_list->begin();it!=blockitem_list->end();it++)
         (*it)->PrintIR(fout);
     symbol_tables.pop_back();
 }
 
-void BlockItemAST::PrintIR(stringstream &fout){
-    val->PrintIR(fout);
-}
-
-void DeclAST::PrintIR(stringstream &fout){
-    for(auto it=def_list->begin();it!=def_list->end();it++)
+void ConstDeclAST::PrintIR(stringstream &fout){
+    for(auto it=def_list->begin();it!=def_list->end();++it)
         (*it)->PrintIR(fout);
 }
 
-
-void DefAST::PrintIR(stringstream &fout){
-    string name="@"+ident+"_"+to_string(table_cnt);
-    symbol_tables[symbol_tables.size()-1][ident]=name;
-    fout<<"\t"<<name<<" = alloc i32\n";
-    if(val!=NULL){
-        val->PrintIR(fout);
-        fout<<"\tstore "<<val->result<<", "<<name<<"\n";
+void ConstDefAST::PrintIR(stringstream &fout){
+    int cur_id=symbol_tables.size()-1;
+    if(len->size()==0){
+        int val=init->Calc();
+        symbol_tables[cur_id][ident]=val;
+    }
+    else{
+        string name="@"+ident+"_"+to_string(var_cnt++);
+        symbol_tables[cur_id][ident]=name;
+        int total=1;
+        int sz=len->size();
+        arr_dim[name]=sz;
+        cur_len.clear();
+        string alloc_str;
+        for (int i=sz-1;i>=0;--i) {
+            int val=(*len)[i]->Calc();
+            total*=val;
+            cur_len.push_back(val);
+            if (i==sz-1)
+                alloc_str="[i32, "+to_string(val)+"]";
+            else
+                alloc_str="["+alloc_str+", "+to_string(val)+"]";
+        }
+        fout<<"\t"<<name<<" = alloc "<<alloc_str<<"\n";
+        cur_array_int.clear();
+        init->PrintIR(fout);
+        for (int i=0;i<total;++i){
+            int step=total,p=i;
+            string newtmp,tmp=name;
+            for (int j=sz-1;j>=0;--j){
+                step/=cur_len[j];
+                int idx=p/step;
+                p-=idx*step;
+                newtmp="%"+to_string(var_cnt++);
+                fout<<"\t"<<newtmp<<" = getelemptr "<<tmp<<", "<<idx<<"\n";
+                tmp=newtmp;
+            }
+            fout<<"\tstore "<<cur_array_int[i]<<", "<<tmp<<"\n";
+        }
     }
 }
 
-void InitValAST::PrintIR(stringstream &fout){
-    exp->PrintIR(fout);
-    result=exp->result;
+void ConstInitAST::PrintIR(stringstream &fout){
+    int sz=cur_len.size();
+    int total=1;
+    for(int i=0;i<sz;++i)
+        total*=cur_len[i];
+    int num=cur_len[sz-1];
+    cur_len.pop_back();
+    int set_num=init->size();
+    int p=0;
+    for(int i=0;i<set_num;++i){
+        ConstInitAST *cur=(ConstInitAST*)((*init)[i].get());
+        if(cur->exp!=NULL){
+            cur_array_int.push_back(cur->Calc());
+            ++p;
+        }
+        else{
+            cur->PrintIR(fout);
+            p+=total/num;
+        }
+    }
+    for(;p<total;++p)
+        cur_array_int.push_back(0);
+    cur_len.push_back(num);
+}
+
+void VarDeclAST::PrintIR(stringstream &fout){
+    for(auto it=def_list->begin();it!=def_list->end();++it)
+        (*it)->PrintIR(fout);
+}
+
+void VarDefAST::PrintIR(stringstream &fout){
+    int cur_id=symbol_tables.size()-1;
+    string name="@"+ident+"_"+to_string(var_cnt++);
+    symbol_tables[cur_id][ident]=name;
+    if(len->size()==0){
+        fout<<"\t"<<name<<" = alloc i32\n";
+        if(init!=NULL){
+            VarInitAST *exp=(VarInitAST*)(init.get());
+            exp->PrintIR(fout);
+            fout<<"\tstore "<<exp->result<<", "<<name<<"\n";
+        }
+    }
+    else{
+        int total=1;
+        int sz=len->size();
+        arr_dim[name]=sz;
+        cur_len.clear();
+        string alloc_str;
+        for (int i=sz-1;i>=0;--i) {
+            int val=(*len)[i]->Calc();
+            total*=val;
+            cur_len.push_back(val);
+            if (i==sz-1)
+                alloc_str="[i32, "+to_string(val)+"]";
+            else
+                alloc_str="["+alloc_str+", "+to_string(val)+"]";
+        }
+        fout<<"\t"<<name<<" = alloc "<<alloc_str<<"\n";
+        if(init!=NULL){
+            cur_array_string.clear();
+            init->PrintIR(fout);
+            for (int i=0;i<total;++i){
+                int step=total,p=i;
+                string newtmp,tmp=name;
+                for (int j=sz-1;j>=0;--j){
+                    step/=cur_len[j];
+                    int idx=p/step;
+                    p-=idx*step;
+                    newtmp="%"+to_string(var_cnt++);
+                    fout<<"\t"<<newtmp<<" = getelemptr "<<tmp<<", "<<idx<<"\n";
+                    tmp=newtmp;
+                }
+                fout<<"\tstore "<<cur_array_string[i]<<", "<<tmp<<"\n";
+            }
+        }
+    }
+}
+
+void VarInitAST::PrintIR(stringstream &fout){
+    if(exp!=NULL){
+        exp->PrintIR(fout);
+        result=exp->result;
+        return;
+    }
+    int sz=cur_len.size();
+    int total=1;
+    for(int i=0;i<sz;++i)
+        total*=cur_len[i];
+    int num=cur_len[sz-1];
+    cur_len.pop_back();
+    int set_num=init->size();
+    int p=0;
+    for(int i=0;i<set_num;++i){
+        VarInitAST *cur=(VarInitAST*)((*init)[i].get());
+        if(cur->exp!=NULL){
+            if(is_global){
+                cur_array_int.push_back(cur->exp->Calc());
+            }
+            else{
+                cur->exp->PrintIR(fout);
+                cur_array_string.push_back(cur->exp->result);
+            }
+            ++p;
+        }
+        else{
+            cur->PrintIR(fout);
+            p+=total/num;
+        }
+    }
+    for(;p<total;++p){
+        if(is_global)
+            cur_array_int.push_back(0);
+        else
+            cur_array_string.push_back("0");
+    }
+    cur_len.push_back(num);
 }
 
 void StmtAST::PrintIR(stringstream &fout){
@@ -303,11 +469,45 @@ void SimpleStmtAST::PrintIR(stringstream &fout){
         break;
         case Simple_ret_void:
             fout <<"\tret \n";
+            ++cut_cnt;
+            fout<<"\%cut_"<<cut_cnt<<":\n";
         break;
-        case Simple_lval:
-            lval->PrintIR(fout);
+        case Simple_lval:{
             exp->PrintIR(fout);
-            fout<<"\tstore "<<exp->result<<", "<<lval->result<<"\n";
+            variant<int,string>value=find_symbol(lval->ident);
+            assert(value.index()==1);
+            string name=get<1>(value);
+            vector<unique_ptr<BaseExpAST> >&idx=*(lval->idx);
+            int sz=idx.size();
+            if(sz==0)
+                fout<<"\tstore "<<exp->result<<", "<<name<<"\n";
+            else{
+                string tmp;
+                if (is_ptr[name]){
+                    tmp="%"+to_string(var_cnt++);
+                    fout<<"\t"<<tmp<<" = load "<<name<<"\n";
+                    for (int i=0;i<sz;++i){
+                        idx[i]->PrintIR(fout);
+                        string newtmp="%"+to_string(var_cnt++);
+                        if(i==0)
+                            fout<<"\t"<<newtmp<<" = getptr "<<tmp<<", "<<idx[i]->result<<"\n";
+                        else
+                            fout<<"\t"<<newtmp<<" = getelemptr "<<tmp<<", "<<idx[i]->result<<"\n";
+                        tmp=newtmp;
+                    }
+                }
+                else {
+                    tmp=name;
+                    for (int i=0;i<sz;++i) {
+                        idx[i]->PrintIR(fout);
+                        string newtmp="%"+to_string(var_cnt++);
+                        fout<<"\t"<<newtmp<<" = getelemptr "<<tmp<<", "<<idx[i]->result<<"\n";
+                        tmp=newtmp;
+                    }
+                }
+                fout<<"\tstore "<<exp->result<<", "<<tmp<<"\n";
+            }
+        }
         break;
         case Simple_exp:
             exp->PrintIR(fout);
@@ -335,7 +535,8 @@ void SimpleStmtAST::PrintIR(stringstream &fout){
 }
 
 void LvalAST::PrintIR(stringstream &fout){
-    result=find_symbol(ident);
+}
+void ConstExpAST::PrintIR(stringstream &fout){
 }
 
 void ExpAST::PrintIR(stringstream &fout){
@@ -508,20 +709,54 @@ void MulExpAST::PrintIR(stringstream &fout){
 }
 
 void UnaryExpAST::PrintIR(stringstream &fout){
-    exp->PrintIR(fout);
-    switch(op){
-        case 0:
-        case '+':
+    vector<string>param_result;
+    int sz;
+    switch(type){
+
+        case Unary_primary:
+            exp->PrintIR(fout);
             result=exp->result;
         break;
-        case '-':
-            result="%"+to_string(var_cnt++);
-            fout<<"\t"<<result<<" = sub 0, "<<exp->result<<"\n";
+
+        case Unary_op:
+            exp->PrintIR(fout);
+            if(op=='+')
+                result=exp->result;
+            else if(op=='-'){
+                result="%"+to_string(var_cnt++);
+                fout<<"\t"<<result<<" = sub 0, "<<exp->result<<"\n";
+            }
+            else if(op=='!'){
+                result="%"+to_string(var_cnt++);
+                fout<<"\t"<<result<<" = eq "<<exp->result<<", 0\n";
+            }
+            else
+                assert(0);
         break;
-        case '!':
-            result="%"+to_string(var_cnt++);
-            fout<<"\t"<<result<<" = eq "<<exp->result<<", 0\n";
+
+        case Unary_call:
+            in_call_func = 1;
+            for(auto it=params->begin();it!=params->end();++it) {
+                (*it)->PrintIR(fout);
+                param_result.push_back((*it)->result);
+            }
+            if (func_type[ident]==Type_int) {
+                result="%"+to_string(var_cnt++);
+                fout<<"\t"<<result<<" = call @"<<ident<<"(";
+            }
+            else if (func_type[ident]==Type_void)
+                fout<<"\tcall @"<<ident<<"(";
+
+            sz=params->size();
+            for(int i=0;i<sz;++i){
+                fout<<param_result[i];
+                if(i!=sz-1)
+                    fout<<", ";
+            }
+            fout<<")\n";
+            in_call_func = 0;
         break;
+
         default:
             assert(0);
     }
@@ -535,8 +770,157 @@ void PrimaryExpAST::PrintIR(stringstream &fout){
         result=exp->result;
     }
     else{
-        lval->PrintIR(fout);
-        result="%"+to_string(var_cnt++);
-        fout<<"\t"<<result<<" = load "<<lval->result<<"\n";
+        variant<int,string> value=find_symbol(lval->ident);
+        if (value.index()==0)
+            result=to_string(get<0>(value));
+        else{
+            result="%"+to_string(var_cnt++);
+            int sz=lval->idx->size();
+            string name=get<1>(value);
+            vector<unique_ptr<BaseExpAST> >&idx=*(lval->idx);
+            if(sz==0){
+                if (in_call_func&&arr_dim[name]&&!is_ptr[name])
+                    fout<<"\t"<<result<<" = getelemptr "<<name<<", 0\n";
+                else
+                    fout<<"\t"<<result<<" = load "<<name<<"\n";
+            }
+            else{
+                string tmp;
+                if (is_ptr[name]){
+                    tmp="%"+to_string(var_cnt++);
+                    fout<<"\t"<<tmp<<" = load "<<name<<"\n";
+                    for (int i=0;i<sz;++i){
+                        idx[i]->PrintIR(fout);
+                        string newtmp="%"+to_string(var_cnt++);
+                        if(i==0)
+                            fout<<"\t"<<newtmp<<" = getptr "<<tmp<<", "<<idx[i]->result<<"\n";
+                        else
+                            fout<<"\t"<<newtmp<<" = getelemptr "<<tmp<<", "<<idx[i]->result<<"\n";
+                        tmp=newtmp;
+                    }
+                }
+                else {
+                    tmp=name;
+                    for (int i=0;i<sz;++i) {
+                        idx[i]->PrintIR(fout);
+                        string newtmp="%"+to_string(var_cnt++);
+                        fout<<"\t"<<newtmp<<" = getelemptr "<<tmp<<", "<<idx[i]->result<<"\n";
+                        tmp=newtmp;
+                    }
+                }
+                if (in_call_func&&(arr_dim[name]>sz))
+                    fout<<"\t"<<result<<" = getelemptr "<<tmp<< ", 0\n";
+                else
+                    fout<<"\t"<<result<<" = load "<<tmp<< "\n";
+            }
+        }
     }
+}
+
+int ConstExpAST::Calc(){
+    return exp->Calc();
+}
+
+int ExpAST::Calc(){
+    return exp->Calc();
+}
+
+int LorExpAST::Calc(){
+    if(op==0)
+        return land_exp->Calc();
+    else
+        return lor_exp->Calc()||land_exp->Calc();
+    return 0;
+}
+
+int LandExpAST::Calc(){
+    if(op==0)
+        return eq_exp->Calc();
+    else
+        return land_exp->Calc()&&eq_exp->Calc();
+    return 0;
+}
+
+int EqExpAST::Calc(){
+    if(op=="")
+        return rel_exp->Calc();
+    else if(op=="!=")
+        return eq_exp->Calc()!=rel_exp->Calc();
+    else if(op=="==")
+        return eq_exp->Calc()==rel_exp->Calc();
+    return 0;
+}
+
+int RelExpAST::Calc(){
+    if(op=="")
+        return add_exp->Calc();
+    else if(op=="<=")
+        return rel_exp->Calc()<=add_exp->Calc();
+    else if(op==">=")
+        return rel_exp->Calc()>=add_exp->Calc();
+    else if(op=="<")
+        return rel_exp->Calc()<add_exp->Calc();
+    else if(op==">")
+        return rel_exp->Calc()>add_exp->Calc();
+    return 0;
+}
+
+int AddExpAST::Calc(){
+    if(op==0)
+        return mul_exp->Calc();
+    else if(op=='+')
+        return add_exp->Calc()+mul_exp->Calc();
+    else if(op=='-')
+        return add_exp->Calc()-mul_exp->Calc();
+    return 0;
+}
+
+int MulExpAST::Calc(){
+    if(op==0)
+        return unary_exp->Calc();
+    else if(op=='*')
+        return mul_exp->Calc()*unary_exp->Calc();
+    else if(op=='/')
+        return mul_exp->Calc()/unary_exp->Calc();
+    else if(op=='%')
+        return mul_exp->Calc()%unary_exp->Calc();
+    return 0;
+}
+
+int UnaryExpAST::Calc(){
+    if(type==Unary_primary)
+        return exp->Calc();
+    else if(type==Unary_op){
+        switch(op){
+            case '+':
+                return exp->Calc();
+            case '-':
+                return -exp->Calc();
+            case '!':
+                return !exp->Calc();
+        }
+    }
+    assert(0);
+    return 0;
+}
+
+int PrimaryExpAST::Calc(){
+    if(type==PrimaryExp_exp)
+        return exp->Calc();
+    else if(type==PrimaryExp_number)
+        return number;
+    else if(type==Primary_lval){
+        variant<int,string>value=find_symbol(lval->ident);
+        assert(value.index()==0);
+        return get<0>(value);
+    }
+    return 0;
+}
+
+int ConstInitAST::Calc(){
+    return exp->Calc();
+}
+
+int VarInitAST::Calc(){
+    return exp->Calc();
 }

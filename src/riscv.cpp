@@ -53,8 +53,8 @@ void SaveAll(stringstream &fout) {
                 addr=cur_top;
                 cur_top+=4;
                 values[reg_value[i]].addr=addr;
+                SaveReg(i,addr,fout);
             }
-            SaveReg(i,addr,fout);
         }
         reg_vis[i] = 0;
     }
@@ -75,8 +75,8 @@ int getRegister(int stat,stringstream &fout){
                 addr=cur_top;
                 cur_top+=4;
                 values[reg_value[i]].addr=addr;
+                SaveReg(i,addr,fout);
             }
-            SaveReg(i,addr,fout);
             reg_value[i]=cur_value;
             reg_vis[i]=stat;
             return i;
@@ -89,7 +89,7 @@ int getRegister(int stat,stringstream &fout){
 void Visit(const koopa_raw_program_t &program,stringstream &fout){
     fout<<"\t.data\n";
     Visit(program.values,fout);
-    fout<<"\t.text\n";
+    fout<<"\n";
     Visit(program.funcs,fout);
 }
 
@@ -122,6 +122,7 @@ int array_size(koopa_raw_type_t ty){
 }
 
 void Visit(const koopa_raw_function_t &func,stringstream &fout) {
+    auto old_values=values;
     if (func->bbs.len==0)
         return;
     cur_func=func;
@@ -132,11 +133,11 @@ void Visit(const koopa_raw_function_t &func,stringstream &fout) {
         reg_vis[i]=0;
     cur_value=0;
 
+    fout<<"\t.text\n";
     fout<<"\t.globl "<<func->name+1<<"\n";
     fout<<func->name+1<<":\n";
-    int max_arg_num=0;
-    for(int i=0;i<func->bbs.len;++i)
-    for (int i=0; i < func->bbs.len;++i) {
+    int max_arg_num=8;
+    for(int i=0;i<func->bbs.len;++i){
         koopa_raw_basic_block_t block=reinterpret_cast<koopa_raw_basic_block_t>(func->bbs.buffer[i]);
         for (int j=0;j<block->insts.len;++j) {
             koopa_raw_value_t val=reinterpret_cast<koopa_raw_value_t>(block->insts.buffer[j]);
@@ -144,12 +145,12 @@ void Visit(const koopa_raw_function_t &func,stringstream &fout) {
                 cur_size+=array_size(val->ty->data.pointer.base);
             else if (val->ty->tag!=KOOPA_RTT_UNIT)
                 cur_size+=4;
-            if (val->kind.tag==KOOPA_RVT_CALL)
+            if(val->kind.tag==KOOPA_RVT_CALL)
                 max_arg_num=max((int)val->kind.data.call.args.len,max_arg_num);
         }
     }
-    cur_size+=4*max_arg_num+64;
-    cur_top+=4*max_arg_num;
+    cur_size+=4*(max_arg_num-8)+64;
+    cur_top+=4*(max_arg_num-8);
     cur_size=(cur_size+15)/16*16;
     if(cur_size<(1<<11))
         fout<<"\taddi sp, sp, "<<-cur_size<<"\n";
@@ -169,11 +170,22 @@ void Visit(const koopa_raw_function_t &func,stringstream &fout) {
 
     for (int i=0;i<func->params.len;++i){
         koopa_raw_value_t ptr=reinterpret_cast<koopa_raw_value_t>(func->params.buffer[i]);
-        int addr=cur_size+i*4;
-        RegInfo info(-1,addr,"");
-        values[ptr]=info;
+        if(i<8){
+            int id=i+7;
+            reg_value[id]=ptr;
+            reg_vis[id]=1;
+            RegInfo info(id,-1,"");
+            values[ptr]=info;
+        }
+        else{
+            int addr=cur_size+(i-8)*4;
+            RegInfo info(-1,addr,"");
+            values[ptr]=info;
+        }
     }
     Visit(func->bbs,fout);
+    fout<<"\n";
+    values=old_values;
 }
 
 void Visit(const koopa_raw_basic_block_t &bb,stringstream &fout){
@@ -191,8 +203,18 @@ RegInfo Visit(const koopa_raw_value_t &value,stringstream &fout) {
     if(values.find(value)!=values.end()){
         if(values[value].reg==-1){
             int id=getRegister(1,fout);
-            values[cur_value].reg=id;
-            LoadReg(id,values[value].addr,fout);
+            values[value].reg=id;
+            if(values[value].local_addr==-1)
+                LoadReg(id,values[value].addr,fout);
+            else{
+                int local_addr=values[value].local_addr;
+                if(local_addr<(1<<11))
+                    fout<<"\taddi "<<regs[id]<<", sp, "<<local_addr<<"\n";
+                else{
+                    fout<<"\tli "<<regs[id]<<", "<<local_addr<<"\n";
+                    fout<<"\tadd "<<regs[id]<<", sp, "<<regs[id]<<"\n";
+                }
+            }
         }
         result=values[value];
         cur_value=lst_value;
@@ -212,7 +234,7 @@ RegInfo Visit(const koopa_raw_value_t &value,stringstream &fout) {
             values[value]=result;
         break;
         case KOOPA_RVT_ALLOC:
-            result.addr=cur_top;
+            result.local_addr=cur_top;
             cur_top+=array_size(value->ty->data.pointer.base);
             values[value]=result;
         break;
@@ -359,41 +381,37 @@ RegInfo Visit(const koopa_raw_binary_t &binary,stringstream &fout){
 
 RegInfo Visit(const koopa_raw_load_t &load,stringstream &fout) {
     RegInfo result(-1,-1,"");
-    if(load.src->kind.tag==KOOPA_RVT_GET_ELEM_PTR||load.src->kind.tag==KOOPA_RVT_GET_PTR){
-        RegInfo val=Visit(load.src,fout);
-        int id=getRegister(1,fout);
-        result.reg=id;
-        fout<<"\t lw "<<regs[id]<<", 0("<<regs[val.reg]<<")\n";
+    int id=getRegister(1,fout);
+    result.reg=id;
+    if(values[load.src].local_addr!=-1)
+        LoadReg(id,values[load.src].local_addr,fout);
+    else if(values[load.src].glob_addr!=""){
+        fout<<"\tla s1, "<<values[load.src].glob_addr<<"\n";
+        fout<<"\tlw "<<regs[id]<<", 0(s1)"<<"\n";
     }
     else{
-        int id=getRegister(1,fout);
-        result.reg=id;
-        if(values[load.src].addr!=-1)
-            LoadReg(id,values[load.src].addr,fout);
-        else{
-            fout<<"\t la s1,"<<values[load.src].glob_addr<<"\n";
-            fout<<"\t lw "<<regs[id]<<", 0(s1)"<<"\n";
-        }
+        reg_vis[id]=2;
+        RegInfo val=Visit(load.src,fout);
+        reg_vis[id]=1;
+        fout<<"\tlw "<<regs[id]<<", 0("<<regs[val.reg]<<")\n";
     }
     return result;
 }
 
 void Visit(const koopa_raw_store_t &store,stringstream &fout){
     RegInfo val=Visit(store.value,fout);
-    if(store.dest->kind.tag==KOOPA_RVT_GET_ELEM_PTR||store.dest->kind.tag==KOOPA_RVT_GET_PTR){
+    if(values[store.dest].local_addr!=-1)
+        SaveReg(val.reg,values[store.dest].local_addr,fout);
+    else if(values[store.dest].glob_addr!=""){
+        fout<<"\tla s1, "<<values[store.dest].glob_addr<<"\n";
+        fout<<"\tsw "<<regs[val.reg]<<", 0(s1)"<<"\n";
+    }
+    else{
         int lst_vis=reg_vis[val.reg];
         reg_vis[val.reg]=2;
         RegInfo dst=Visit(store.dest,fout);
         reg_vis[val.reg]=lst_vis;
         fout<<"\tsw "<<regs[val.reg]<<", 0("<<regs[dst.reg]<<")\n";
-    }
-    else{
-        if(values[store.dest].addr!=-1)
-            SaveReg(val.reg,values[store.dest].addr,fout);
-        else{
-            fout<<"\t la s1,"<<values[store.dest].glob_addr<<"\n";
-            fout<<"\t sw "<<regs[val.reg]<<", 0(s1)"<<"\n";
-        }
     }
 }
 
@@ -418,12 +436,32 @@ RegInfo Visit(const koopa_raw_call_t &call,stringstream &fout) {
     RegInfo result(-1,-1,"");
     for(int i=0;i<call.args.len;++i){
         koopa_raw_value_t arg=reinterpret_cast<koopa_raw_value_t>(call.args.buffer[i]);
-        RegInfo argreg=Visit(arg,fout);
-        int addr=(i-8)*4;
-        SaveReg(argreg.reg,addr,fout);
+        int argreg=Visit(arg,fout).reg;
+        if(i<8){
+            int id=i+7;
+            if(id==argreg)
+                continue;
+            if(reg_vis[id]==1){
+                values[reg_value[id]].reg=-1;
+                int addr=values[reg_value[id]].addr;
+                if (addr==-1) {
+                    addr=cur_top;
+                    cur_top+=4;
+                    values[reg_value[id]].addr=addr;
+                    SaveReg(id,addr,fout);
+                }
+            }
+            fout<<"\tmv "<<regs[id]<<", "<<regs[argreg]<<"\n";
+            reg_value[id]=arg;
+            reg_vis[id]=2;
+        }
+        else{
+            int addr=(i-8)*4;
+            SaveReg(argreg,addr,fout);
+        }
     }
     SaveAll(fout);
-    fout<<"\t call"<<call.callee->name+1<<"\n";
+    fout<<"\tcall "<<call.callee->name+1<<"\n";
     if(cur_value->ty->tag!=KOOPA_RTT_UNIT){
         reg_value[7]=cur_value;
         reg_vis[7]=1;
@@ -462,32 +500,48 @@ RegInfo Visit(const koopa_raw_get_elem_ptr_t &get_elem_ptr,stringstream &fout){
     koopa_raw_value_t src=get_elem_ptr.src;
     RegInfo result(-1,-1,"");
     RegInfo index=Visit(get_elem_ptr.index,fout);
-    if(values[src].addr!=-1){
-        int addr=values[src].addr;
+    int len=array_size(src->ty->data.pointer.base->data.array.base);
+    //fout<<"#check src addr: "<<values[src].addr<<endl;
+    if(values[src].local_addr!=-1){
+        int addr=values[src].local_addr;
         if(addr<(1<<11))
             fout<<"\taddi s2, sp, "<<addr<<"\n";
         else{
             fout<<"\tli s1, "<<addr<<"\n";
             fout<<"\tadd s2, sp, s1\n";
         }
+        fout<<"\tli s1, "<<len<<"\n";
+        fout<<"\tmul s1, "<<regs[index.reg]<<", s1\n";
+        int id=getRegister(1,fout);
+        result.reg=id;
+        fout<<"\tadd "<<regs[id]<<", s2, s1\n";
     }
-    else if(values[src].glob_addr!="")
+    else if(values[src].glob_addr!=""){
+        int id=getRegister(1,fout);
+        result.reg=id;
         fout<<"\tla s2, "<<values[src].glob_addr<<"\n";
+        fout<<"\tli s1, "<<len<<"\n";
+        fout<<"\tmul s1, "<<regs[index.reg]<<", s1\n";
+        fout<<"\tadd "<<regs[id]<<", s2, s1\n";
+    }
     else{
         int lst_vis=reg_vis[index.reg];
         reg_vis[index.reg]=2;
         RegInfo srcreg=Visit(src,fout);
         reg_vis[index.reg]=lst_vis;
-        fout<<"\tmv s2, "<<regs[srcreg.reg]<<"\n";
+
+        fout<<"\tli s1, "<<len<<"\n";
+        fout<<"\tmul s1, s1, "<<regs[index.reg]<<"\n";
+        
+        lst_vis=reg_vis[srcreg.reg];
+        reg_vis[srcreg.reg]=2;
+        int id=getRegister(1,fout);
+        result.reg=id;
+        reg_vis[srcreg.reg]=lst_vis;
+
+        fout<<"\tadd "<<regs[id]<<", s1, "<<regs[srcreg.reg]<<"\n";
     }
 
-    int len=array_size(src->ty->data.pointer.base->data.array.base);
-    fout<<"\tli s1, "<<len<<"\n";
-    fout<<"\tmul s1, s1, "<<regs[index.reg]<<"\n";
-
-    int id=getRegister(1,fout);
-    result.reg=id;
-    fout<<"\tadd "<<regs[id]<<", s2, s1\n";
     return result;
 }
 
@@ -495,32 +549,47 @@ RegInfo Visit(const koopa_raw_get_ptr_t  &get_ptr,stringstream &fout){
     koopa_raw_value_t src=get_ptr.src;
     RegInfo result(-1,-1,"");
     RegInfo index=Visit(get_ptr.index,fout);
-    if(values[src].addr!=-1){
-        int addr=values[src].addr;
+    int len=array_size(src->ty->data.pointer.base);
+    if(values[src].local_addr!=-1){
+        int addr=values[src].local_addr;
         if(addr<(1<<11))
             fout<<"\taddi s2, sp, "<<addr<<"\n";
         else{
             fout<<"\tli s1, "<<addr<<"\n";
             fout<<"\tadd s2, sp, s1\n";
         }
+        fout<<"\tli s1, "<<len<<"\n";
+        fout<<"\tmul s1, "<<regs[index.reg]<<", s1\n";
+        int id=getRegister(1,fout);
+        result.reg=id;
+        fout<<"\tadd "<<regs[id]<<", s2, s1\n";
     }
-    else if(values[src].glob_addr!="")
+    else if(values[src].glob_addr!=""){
+        int id=getRegister(1,fout);
+        result.reg=id;
         fout<<"\tla s2, "<<values[src].glob_addr<<"\n";
+        fout<<"\tli s1, "<<len<<"\n";
+        fout<<"\tmul s1, "<<regs[index.reg]<<", s1\n";
+        fout<<"\tadd "<<regs[id]<<", s2, s1\n";
+    }
     else{
         int lst_vis=reg_vis[index.reg];
         reg_vis[index.reg]=2;
         RegInfo srcreg=Visit(src,fout);
         reg_vis[index.reg]=lst_vis;
-        fout<<"\tmv s2, "<<regs[srcreg.reg]<<"\n";
+
+        fout<<"\tli s1, "<<len<<"\n";
+        fout<<"\tmul s1, s1, "<<regs[index.reg]<<"\n";
+
+        lst_vis=reg_vis[srcreg.reg];
+        reg_vis[srcreg.reg]=2;
+        int id=getRegister(1,fout);
+        result.reg=id;
+        reg_vis[srcreg.reg]=lst_vis;
+
+        fout<<"\tadd "<<regs[id]<<", s1, "<<regs[srcreg.reg]<<"\n";
     }
 
-    int len=array_size(src->ty->data.pointer.base);
-    fout<<"\tli s1, "<<len<<"\n";
-    fout<<"\tmul s1, s1, "<<regs[index.reg]<<"\n";
-
-    int id=getRegister(1,fout);
-    result.reg=id;
-    fout<<"\tadd "<<regs[id]<<", s2, s1\n";
     return result;
 }
 
